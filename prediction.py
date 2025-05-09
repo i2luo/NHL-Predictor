@@ -97,16 +97,7 @@ def load_team_stats():
     For this example, we'll create synthetic data for NHL teams.
     """
     # NHL teams
-    teams = [
-        'Vancouver Canucks', 'Edmonton Oilers', 'Calgary Flames', 'Seattle Kraken',
-        'Vegas Golden Knights', 'Los Angeles Kings', 'San Jose Sharks', 'Anaheim Ducks',
-        'Colorado Avalanche', 'Minnesota Wild', 'Dallas Stars', 'Winnipeg Jets',
-        'St. Louis Blues', 'Nashville Predators', 'Chicago Blackhawks', 'Arizona Coyotes',
-        'Toronto Maple Leafs', 'Boston Bruins', 'Tampa Bay Lightning', 'Florida Panthers',
-        'Detroit Red Wings', 'Ottawa Senators', 'Montreal Canadiens', 'Buffalo Sabres',
-        'New York Rangers', 'New York Islanders', 'New Jersey Devils', 'Pittsburgh Penguins',
-        'Philadelphia Flyers', 'Washington Capitals', 'Carolina Hurricanes', 'Columbus Blue Jackets'
-    ]
+    teams = list(TEAM_ABBR_TO_NAME.values())
     
     # Create a dictionary for team statistics
     team_stats = {}
@@ -152,17 +143,12 @@ def load_team_stats():
             'Rolling_FOPct': base['FO'] * (0.95 + 0.1 * np.random.random()),
             'Rolling_PDO': base['PDO'] * (0.99 + 0.02 * np.random.random()),
             'Team_Strength': tier_factor * (0.9 + 0.2 * np.random.random()),
-            'OT_Win_Pct': base['OT_WIN_PCT'] * (0.9 + 0.2 * np.random.random())  # Added OT win percentage
+            'OT_Win_Pct': base['OT_WIN_PCT'] * (0.9 + 0.2 * np.random.random())
         }
     
     # Add abbreviations as keys too
-    abbr_stats = {}
     for abbr, name in TEAM_ABBR_TO_NAME.items():
-        if name in team_stats:
-            abbr_stats[abbr] = team_stats[name]
-    
-    # Merge dictionaries
-    team_stats.update(abbr_stats)
+        team_stats[abbr] = team_stats[name]
     
     return team_stats
 
@@ -171,17 +157,16 @@ def create_feature_vector(home_team, away_team, team_stats, days_since_season_st
     """
     Create the feature vector for the prediction model
     """
-    # Try to get team stats, handling both full names and abbreviations
+    # Get team stats, handling both full names and abbreviations
     try:
         home_stats = team_stats[home_team]
     except KeyError:
-        # Try to convert from abbreviation to full name
+        # Try to convert from abbreviation to full name if not already in stats
         home_full = TEAM_ABBR_TO_NAME.get(home_team, home_team)
         try:
             home_stats = team_stats[home_full]
         except KeyError:
             print(f"Warning: Could not find stats for team: {home_team} or {home_full}")
-            print(f"Available teams: {list(team_stats.keys())[:5]}...")
             # Use default stats
             home_stats = {
                 'Team_Strength': 1.0,
@@ -198,13 +183,12 @@ def create_feature_vector(home_team, away_team, team_stats, days_since_season_st
     try:
         away_stats = team_stats[away_team]
     except KeyError:
-        # Try to convert from abbreviation to full name
+        # Try to convert from abbreviation to full name if not already in stats
         away_full = TEAM_ABBR_TO_NAME.get(away_team, away_team)
         try:
             away_stats = team_stats[away_full]
         except KeyError:
             print(f"Warning: Could not find stats for team: {away_team} or {away_full}")
-            print(f"Available teams: {list(team_stats.keys())[:5]}...")
             # Use default stats
             away_stats = {
                 'Team_Strength': 1.0,
@@ -299,85 +283,6 @@ def predict_score(features):
     
     return home_score, away_score, is_overtime
 
-# Main function to predict all games
-def predict_canucks_games(schedule_file):
-    """
-    Predict all Vancouver Canucks games in the schedule
-    """
-    # Load the schedule
-    schedule = load_schedule(schedule_file)
-    
-    # Load team statistics
-    team_stats = load_team_stats()
-    
-    # Get current date
-    current_date = datetime.datetime.now()
-    
-    # Assume season started on October 1, 2024
-    season_start = datetime.datetime(2024, 10, 1)
-    
-    # Create results dataframe
-    results = []
-    
-    # Process each game
-    for idx, game in schedule.iterrows():
-        # Skip games that have already happened
-        if game['Date'] < current_date:
-            continue
-        
-        # Calculate days since season start
-        days_since_start = (game['Date'] - season_start).days
-        
-        # Determine home and away teams
-        if game['Canucks_Home']:
-            home_team = game['Home_Team']
-            away_team = game['Away_Team']
-        else:
-            home_team = game['Home_Team']
-            away_team = game['Away_Team']  # 'VAN' should be one of these
-        
-        # Create feature vector
-        features = create_feature_vector(home_team, away_team, team_stats, days_since_start)
-        
-        # Predict the score
-        home_score, away_score, is_overtime = predict_score(features)
-        
-        # Determine if Vancouver wins
-        vancouver_is_home = game['Canucks_Home']
-        vancouver_score = home_score if vancouver_is_home else away_score
-        opponent_score = away_score if vancouver_is_home else home_score
-        vancouver_win = vancouver_score > opponent_score
-        
-        # Add to results
-        results.append({
-            'Date': game['Date'],
-            'Home_Team': home_team,
-            'Away_Team': away_team,
-            'Home_Score': home_score,
-            'Away_Score': away_score,
-            'Vancouver_Score': vancouver_score,
-            'Opponent_Score': opponent_score,
-            'Vancouver_Win': vancouver_win,
-            'Is_Overtime': is_overtime
-        })
-    
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
-    
-    # Add win probability
-    results_df['Win_Probability'] = results_df.apply(
-        lambda row: calculate_win_probability(row['Home_Score'], row['Away_Score'], row['Home_Team'] == 'VAN' or row['Home_Team'] == 'Vancouver Canucks'),
-        axis=1
-    )
-    
-    # Format results with OT indicator
-    results_df['Predicted_Score'] = results_df.apply(
-        lambda row: f"{row['Home_Team']} {row['Home_Score']} - {row['Away_Score']} {row['Away_Team']}{' (OT)' if row['Is_Overtime'] else ''}",
-        axis=1
-    )
-    
-    return results_df
-
 # Function to calculate win probability
 def calculate_win_probability(home_score, away_score, canucks_home):
     """
@@ -402,6 +307,92 @@ def calculate_win_probability(home_score, away_score, canucks_home):
             # Larger margin
             return max(0.5 - 0.1 * diff, 0.05)
 
+# Main function to predict all games
+def predict_canucks_games(schedule_file):
+    """
+    Predict all Vancouver Canucks games in the schedule
+    """
+    # Load the schedule
+    schedule = load_schedule(schedule_file)
+    
+    # Load team statistics
+    team_stats = load_team_stats()
+    
+    # FIXED: Don't filter out games based on current date since we want to predict all games
+    # Assume season started on October 1, 2024
+    season_start = datetime.datetime(2024, 10, 1)
+    
+    # Create results list
+    results = []
+    
+    # Process each game
+    for idx, game in schedule.iterrows():
+        # Calculate days since season start
+        days_since_start = (game['Date'] - season_start).days
+        
+        # Determine home and away teams
+        home_team = game['Home_Team']
+        away_team = game['Away_Team']
+        
+        # Check if Canucks are playing
+        if 'VAN' in home_team or 'VAN' in away_team:
+            # Create feature vector
+            features = create_feature_vector(home_team, away_team, team_stats, days_since_start)
+            
+            # Predict the score
+            home_score, away_score, is_overtime = predict_score(features)
+            
+            # Determine if Vancouver is home
+            vancouver_is_home = 'VAN' in home_team
+            
+            # Get Vancouver's score and opponent's score
+            vancouver_score = home_score if vancouver_is_home else away_score
+            opponent_score = away_score if vancouver_is_home else home_score
+            
+            # Determine if Vancouver wins
+            vancouver_win = vancouver_score > opponent_score
+            
+            # Add to results
+            results.append({
+                'Date': game['Date'],
+                'Home_Team': home_team,
+                'Away_Team': away_team,
+                'Home_Score': home_score,
+                'Away_Score': away_score,
+                'Vancouver_Score': vancouver_score,
+                'Opponent_Score': opponent_score,
+                'Vancouver_Win': vancouver_win,
+                'Is_Overtime': is_overtime,
+                'Canucks_Home': vancouver_is_home
+            })
+    
+    # Check if we have any results before converting to DataFrame
+    if not results:
+        print("No Canucks games found in the schedule.")
+        # Return empty DataFrame with proper columns to avoid error
+        return pd.DataFrame(columns=[
+            'Date', 'Home_Team', 'Away_Team', 'Home_Score', 'Away_Score',
+            'Vancouver_Score', 'Opponent_Score', 'Vancouver_Win', 'Is_Overtime', 
+            'Canucks_Home', 'Win_Probability', 'Predicted_Score'
+        ])
+    
+    # Convert to DataFrame
+    results_df = pd.DataFrame(results)
+    
+    # Add win probability
+    results_df['Win_Probability'] = results_df.apply(
+        lambda row: calculate_win_probability(row['Home_Score'], row['Away_Score'], row['Canucks_Home']),
+        axis=1
+    )
+    
+    # Format results with OT indicator
+    results_df['Predicted_Score'] = results_df.apply(
+        lambda row: f"{row['Home_Team']} {row['Home_Score']} - {row['Away_Score']} {row['Away_Team']}{' (OT)' if row['Is_Overtime'] else ''}",
+        axis=1
+    )
+    
+    return results_df
+
 # Run predictions and save to file
 def main(schedule_file):
     """
@@ -411,19 +402,19 @@ def main(schedule_file):
         # Run predictions
         results = predict_canucks_games(schedule_file)
         
+        # Check if we have any results
+        if results.empty:
+            print("No Canucks games found in the schedule.")
+            return results
+            
         # Calculate overall statistics
         total_games = len(results)
-        
-        if total_games == 0:
-            print("No future games found in the schedule.")
-            return pd.DataFrame()
-            
         wins = results['Vancouver_Win'].sum()
         losses = total_games - wins
-        win_percentage = wins / total_games
+        win_percentage = wins / total_games if total_games > 0 else 0
         
         ot_games = results['Is_Overtime'].sum()
-        ot_percentage = (ot_games / total_games) * 100
+        ot_percentage = (ot_games / total_games) * 100 if total_games > 0 else 0
         
         regulation_wins = sum((results['Vancouver_Win']) & (~results['Is_Overtime']))
         ot_wins = sum((results['Vancouver_Win']) & (results['Is_Overtime']))
@@ -464,9 +455,9 @@ if __name__ == "__main__":
         predictions = main(schedule_file)
         
         if not predictions.empty:
-            # Display the next 5 games
-            print("\nUpcoming 10 Games Predictions:")
-            for idx, game in predictions.head(10).iterrows():
+            # Display the next 10 games
+            print("\nUpcoming Games Predictions:")
+            for idx, game in predictions.iterrows():
                 ot_indicator = " (OT)" if game['Is_Overtime'] else ""
                 print(f"{game['Date'].strftime('%Y-%m-%d')}: {game['Home_Team']} {game['Home_Score']} - {game['Away_Score']} {game['Away_Team']}{ot_indicator} (Win Prob: {game['Win_Probability']:.2f})")
     else:
